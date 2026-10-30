@@ -1,4 +1,4 @@
-/* ИИ для дела: подбор задачи, окно «Написать», копирование, полоса снизу, фильтры.
+/* курс «ИИ для бизнеса»: подбор задачи, окно «Написать», копирование, полоса снизу, фильтры, анимация первого экрана.
    Персональные данные не собираются и не хранятся: выбор человека живёт только в адресе страницы. */
 (function () {
   "use strict";
@@ -15,6 +15,8 @@
   var toastEl;
   function toast(t) {
     if (!toastEl) { toastEl = document.createElement("div"); toastEl.className = "toast"; toastEl.setAttribute("role", "status"); document.body.appendChild(toastEl); }
+    var host = document.querySelector("dialog[open]") || document.body;
+    if (toastEl.parentNode !== host) host.appendChild(toastEl);
     toastEl.textContent = t; toastEl.classList.add("on");
     clearTimeout(toastEl._t); toastEl._t = setTimeout(function () { toastEl.classList.remove("on"); }, 2200);
   }
@@ -38,7 +40,7 @@
   var bg = $(".sheet-bg"), sheet = $(".sheet"), currentText = "", lastFocus = null;
   function openSheet(text, where) {
     if (!sheet) return;
-    currentText = text || CFG.defaultText || "Здравствуйте! Вопрос про курс ИИ для дела.";
+    currentText = text || CFG.defaultText || "Здравствуйте! Вопрос про курс по нейросетям для бизнеса.";
     if (SRC) currentText = /^[^!]{1,40}!/.test(currentText) ? currentText.replace(/^([^!]{1,40}!)\s*/, "$1 (ссылка " + SRC + ") ") : "(ссылка " + SRC + ") " + currentText;
     $(".msg", sheet).textContent = currentText;
     $(".js-tg", sheet).href = "https://t.me/" + TG + "?text=" + encodeURIComponent(currentText);
@@ -55,7 +57,7 @@
   }
   document.addEventListener("click", function (e) {
     var b = e.target.closest("[data-write]");
-    if (b) { e.preventDefault(); openSheet(b.getAttribute("data-write"), b.getAttribute("data-where")); return; }
+    if (b) { e.preventDefault(); var dd = b.closest("dialog"); if (dd && dd.open) dd.close(); openSheet(b.getAttribute("data-write"), b.getAttribute("data-where")); return; }
     if (e.target.closest(".sheet .x") || e.target === bg) { closeSheet(); return; }
     var c = e.target.closest("[data-copy]");
     if (c) { e.preventDefault(); var src = document.getElementById(c.getAttribute("data-copy")); copy(src ? src.textContent.trim() : c.getAttribute("data-copy-text"), c.getAttribute("data-done")); goal("prompt_copy"); return; }
@@ -97,7 +99,7 @@
   function initPicker(root) {
     var base = root.getAttribute("data-base") || "./";
     var steps = $$(".pk-step", root), res = $(".pk-res", root), bar = $(".pk-bar i", root), cnt = $(".pk-count", root);
-    var state = { pains: [], sphere: "" }, data = null, cur = 0;
+    var state = { pains: [], spheres: [] }, data = window.TASKS_DATA || null, cur = 0;
     var PAIN_TASKS = {
       clients: ["otvety-klientam", "zapis-i-napominaniya", "otvety-na-otzyvy", "vozvrat-klientov"],
       docs: ["scheta-i-akty", "proverka-dogovorov", "kommercheskoe-predlozhenie", "dannye-iz-dokumentov", "pisma-v-nuzhnom-tone"],
@@ -136,62 +138,153 @@
     $(".js-next", steps[0]).addEventListener("click", function () { if (state.pains.length) { show(1); goal("podbor_step", { step: 2 }); } });
     $$(".opt", steps[1]).forEach(function (o) {
       o.addEventListener("click", function () {
-        state.sphere = o.getAttribute("data-v");
-        $$(".opt", steps[1]).forEach(function (x) { x.setAttribute("aria-pressed", x === o ? "true" : "false"); });
-        load(function () { render(); show(2); writeHash(); goal("podbor_result", { pains: state.pains.join(","), sphere: state.sphere }); res.scrollIntoView({ behavior: "smooth", block: "start" }); });
+        var v = o.getAttribute("data-v");
+        if (v === "other") { state.spheres = state.spheres[0] === "other" ? [] : ["other"]; }
+        else {
+          state.spheres = state.spheres.filter(function (x) { return x !== "other"; });
+          var i = state.spheres.indexOf(v);
+          if (i < 0) state.spheres.push(v); else state.spheres.splice(i, 1);
+        }
+        $$(".opt", steps[1]).forEach(function (x) { x.setAttribute("aria-pressed", state.spheres.indexOf(x.getAttribute("data-v")) >= 0 ? "true" : "false"); });
       });
     });
+    $(".js-show", steps[1]).addEventListener("click", function () {
+      load(function () { render(); show(2); writeHash(); openRes(); goal("podbor_result", { pains: state.pains.join(","), sphere: state.spheres.join(",") }); });
+    });
     $$(".js-back", root).forEach(function (b) { b.addEventListener("click", function () { show(Math.max(0, cur - 1)); }); });
-    root.addEventListener("click", function (e) { if (e.target.closest(".js-restart")) { e.preventDefault(); state = { pains: [], sphere: "" }; $$(".opt", root).forEach(function (x) { x.setAttribute("aria-pressed", "false"); }); $(".js-next", steps[0]).disabled = true; history.replaceState(null, "", location.pathname + location.search); show(0); } });
+    function restart() { state = { pains: [], spheres: [] }; $$(".opt", root).forEach(function (x) { x.setAttribute("aria-pressed", "false"); }); $(".js-next", steps[0]).disabled = true; history.replaceState(null, "", location.pathname + location.search); show(0); }
+    root.addEventListener("click", function (e) {
+      if (e.target.closest(".js-restart")) { e.preventDefault(); restart(); }
+      if (e.target.closest(".js-open")) { e.preventDefault(); openRes(); }
+    });
+    var dlg = null;
+    function modal() {
+      if (dlg) return dlg;
+      dlg = document.createElement("dialog");
+      dlg.className = "pk-modal"; dlg.setAttribute("aria-labelledby", "pkm-t");
+      document.body.appendChild(dlg);
+      dlg.addEventListener("click", function (e) {
+        if (e.target === dlg || e.target.closest(".js-pkm-close")) { dlg.close(); return; }
+        if (e.target.closest(".js-restart")) { e.preventDefault(); dlg.close(); restart(); root.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      });
+      return dlg;
+    }
+    function openRes() { var d = modal(); if (d.open) return; if (d.showModal) d.showModal(); else d.setAttribute("open", ""); goal("podbor_open"); }
+    function taskHref(t) { return (CFG.taskBase || base + "zadachi/") + t.slug + "/"; }
 
     function pick() {
       var by = {}; data.tasks.forEach(function (t) { by[t.slug] = t; });
       var out = [], seen = {};
       var lists = state.pains.map(function (p) { return (PAIN_TASKS[p] || []).slice(); });
-      var sp = state.sphere && state.sphere !== "other" ? state.sphere : "";
-      lists = lists.map(function (l) { return l.sort(function (a, b) { return (sp && by[b] && by[b].spheres.indexOf(sp) >= 0 ? 1 : 0) - (sp && by[a] && by[a].spheres.indexOf(sp) >= 0 ? 1 : 0); }); });
+      var sp = state.spheres.filter(function (x) { return x !== "other"; });
+      function score(slug) { var t = by[slug]; return t ? sp.filter(function (x) { return t.spheres.indexOf(x) >= 0 || t.spheres.indexOf("any") >= 0; }).length : 0; }
+      lists = lists.map(function (l) { return l.map(function (x, k) { return [x, k]; }).sort(function (a, b) { return (score(b[0]) - score(a[0])) || (a[1] - b[1]); }).map(function (x) { return x[0]; }); });
       for (var round = 0; out.length < 3 && round < 6; round++) {
         lists.forEach(function (l) { var s = l[round]; if (s && !seen[s] && by[s] && out.length < 3) { seen[s] = 1; out.push(by[s]); } });
       }
       return out;
     }
-    function sphereName() { var o = $('.opt[aria-pressed="true"]', steps[1]); return o ? o.textContent.trim() : ""; }
+    function sphereName() { return $$('.opt[aria-pressed="true"]', steps[1]).filter(function (o) { return o.getAttribute("data-v") !== "other"; }).map(function (o) { return o.textContent.trim(); }).join(", "); }
     function render() {
-      var list = pick(), sn = sphereName();
-      var names = list.map(function (t) { return t.title.toLowerCase(); });
-      var code = (CFG.site || "main") + "-" + state.pains.join("+") + "-" + state.sphere;
-      var msg = (CFG.writePrefix || "Здравствуйте! Подобрал на сайте ИИ для дела") + ": " + (sn ? sn + ". " : "") + "Задачи: " + names.join("; ") + ". Получится собрать это за 6 встреч? Код " + code;
-      var h = "";
-      if (state.pains[0] === "unknown") h += '<p class="lead">Это нормально. На второй встрече мы вместе разберём ваше дело и выберем задачу. Вот три задачи, с которых удобно начать:</p>';
-      else h += '<p class="lead">Вот что ИИ может взять на себя' + (sn && state.sphere !== "other" ? " в вашей сфере (" + esc(sn.toLowerCase()) + ")" : "") + ". Попробуйте первый шаг сегодня, бесплатно.</p>";
-      list.forEach(function (t, i) {
-        var ex = t.examples && t.examples[0];
-        h += '<article class="res-card"><h3>' + esc(t.title) + '</h3><p class="muted small">' + esc(t.pain) + "</p>" +
-          '<div class="layer"><details' + (i === 0 ? " open" : "") + '><summary>СДЕЛАЙТЕ ПЕРВЫЙ ШАГ СЕГОДНЯ</summary><ol>' + t.steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ol>" +
-          '<div class="prompt"><span id="pr-' + i + '">' + esc(t.prompt) + '</span><button class="btn btn-line btn-sm copy" data-copy="pr-' + i + '" data-done="Задание скопировано: вставьте его в нейросеть">Скопировать задание</button></div></details></div>' +
-          '<div class="layer"><div class="layer-t">ИНСТРУМЕНТ, КОТОРЫЙ ДЕЛАЕТ ЭТО САМ</div><p>' + esc(t.build) + "</p>" +
-          (ex ? '<p class="small">Пример: <a href="' + esc(ex.url) + '" target="_blank" rel="noopener">' + esc(ex.label) + "</a></p>" : "") +
-          '<p class="errs"><b>Где ошибается:</b> ' + esc(t.errs) + '</p><p class="small"><a href="' + (CFG.taskBase || base + "zadachi/") + t.slug + '/">Подробно об этой задаче →</a></p></div></article>';
-      });
-      h += '<div class="course-box"><h3>' + esc(CFG.courseTitle || "Довести до работы на ваших данных: 6 встреч") + "</h3><p>" + esc(CFG.courseText || "") + '</p><div class="cta-row">' +
+      var list = pick(), sn = sphereName(), t = list[0];
+      var names = list.map(function (x) { return x.title.toLowerCase(); });
+      var code = (CFG.site || "main") + "-" + state.pains.join("+") + "-" + (state.spheres.join("+") || "none");
+      var msg = (CFG.writePrefix || "Здравствуйте! Подобрал на сайте курса") + ": " + (sn ? sn + ". " : "") + "Задачи: " + names.join("; ") + ". Получится собрать это за 6 встреч? Код " + code;
+      var head = state.pains[0] === "unknown" ? "Задачи, с которых удобно начать" : (list.length > 1 ? list.length + " задачи, которые ИИ может взять на себя" : "Что ИИ может взять на себя");
+      var h = '<div class="pkm-in"><button class="x js-pkm-close" type="button" aria-label="Закрыть">×</button>' +
+        '<span class="eyebrow">ВАША ПОДБОРКА</span><h3 id="pkm-t">' + esc(head) + "</h3>" + (sn ? '<p class="pkm-for">Для сфер: ' + esc(sn.toLowerCase()) + "</p>" : "") +
+        '<article class="pkm-main"><span class="pkm-label">Начните с этого</span><h4>' + esc(t.title) + '</h4><p class="muted small">' + esc(t.pain) + "</p>" +
+        '<p class="pkm-sub">Первый шаг сегодня, бесплатно: скопируйте задание, замените слова в скобках и вставьте в любую нейросеть</p>' +
+        '<div class="prompt"><span id="pkm-pr">' + esc(t.prompt) + '</span><button class="btn btn-line btn-sm copy" data-copy="pkm-pr" data-done="Задание скопировано: вставьте его в нейросеть">Скопировать задание</button></div>' +
+        '<p class="small"><b>На курсе соберёте:</b> ' + esc(t.build) + '</p><p class="small" style="margin:0"><a href="' + taskHref(t) + '">Пошагово, с примером и ошибками нейросети →</a></p></article>';
+      if (list.length > 1) h += '<div class="pkm-more"><span class="pkm-label">Ещё подойдёт</span>' + list.slice(1).map(function (x) {
+        return '<a class="pkm-row" href="' + taskHref(x) + '"><span><b>' + esc(x.title) + "</b><small>" + esc(x.build) + "</small></span><i>→</i></a>"; }).join("") + "</div>";
+      h += '<div class="pkm-cta"><h4>' + esc(CFG.courseTitle || "Довести до работы на ваших данных: 6 встреч") + "</h4><p>" + esc(CFG.courseText || "") + '</p><div class="cta-row">' +
         '<button class="btn btn-main" data-write="' + esc(msg) + '" data-where="podbor">Хочу собрать это на курсе <span class="arr">→</span></button>' +
-        '<button class="btn btn-line" data-share="">Отправить знакомому</button></div><p class="small" style="margin:8px 0 0"><button class="linkbtn js-restart">Подобрать заново</button></p></div>';
-      res.innerHTML = h;
+        '<button class="btn btn-line" data-share="">Отправить знакомому</button></div><p class="small" style="margin:6px 0 0"><button class="linkbtn js-restart">Подобрать заново</button></p></div></div>';
+      modal().innerHTML = h;
+      res.innerHTML = '<div class="pk-sum"><p class="pk-q">Подборка готова</p><ul class="pk-chips">' + list.map(function (x) { return "<li>" + esc(x.title) + "</li>"; }).join("") +
+        '</ul><div class="cta-row"><button type="button" class="btn btn-main js-open">Открыть подборку</button><button type="button" class="btn btn-line js-restart">Подобрать заново</button></div></div>';
     }
-    function writeHash() { history.replaceState(null, "", "#p=" + state.pains.join(",") + "&s=" + state.sphere); }
+    function writeHash() { history.replaceState(null, "", "#p=" + state.pains.join(",") + "&s=" + state.spheres.join(",")); }
     function readHash() {
-      var m = location.hash.match(/p=([a-z,]+)&s=([a-z]*)/);
+      var m = location.hash.match(/p=([a-z,]+)&s=([a-z,]*)/);
       if (!m) return;
       state.pains = m[1].split(",").filter(function (p) { return PAIN_TASKS[p]; });
-      state.sphere = m[2];
+      state.spheres = m[2] ? m[2].split(",") : [];
       if (!state.pains.length) return;
       state.pains.forEach(function (p) { var o = $('.opt[data-v="' + p + '"]', steps[0]); if (o) o.setAttribute("aria-pressed", "true"); });
-      var so = $('.opt[data-v="' + state.sphere + '"]', steps[1]); if (so) so.setAttribute("aria-pressed", "true");
+      state.spheres.forEach(function (x) { var so = $('.opt[data-v="' + x + '"]', steps[1]); if (so) so.setAttribute("aria-pressed", "true"); });
       $(".js-next", steps[0]).disabled = false;
-      load(function () { render(); show(2); });
+      load(function () { render(); show(2); openRes(); });
     }
     $(".js-next", steps[0]).disabled = true;
     show(0); readHash();
+  }
+
+  /* ---------- Анимация первого экрана: запрос печатается, ИИ-помощник собирает страницу ---------- */
+  var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var demo = $(".demo");
+  if (demo && !calm) {
+    var full = $(".d-full", demo), live = $(".d-live", demo), text = full ? full.textContent : "";
+    demo.classList.add("play");
+    var caret = document.createElement("i"); caret.className = "d-caret"; live.appendChild(caret);
+    var k = 0, node = document.createTextNode(""); live.insertBefore(node, caret);
+    var steps2 = [[600, "s2"], [1400, "s3"], [250, "s4"], [900, "s5"], [600, "s6"]];   // думает, собирает, готово, выбор окна, запись
+    function next(i) { if (i >= steps2.length) return; setTimeout(function () { demo.classList.add(steps2[i][1]); next(i + 1); }, steps2[i][0]); }
+    function type() { if (k <= text.length) { node.nodeValue = text.slice(0, k); k += 2; setTimeout(type, 34); } else { node.nodeValue = text; next(0); } }
+    setTimeout(type, 500);
+  }
+
+  var reveals = $$(".reveal");
+  if (reveals.length && "IntersectionObserver" in window && !calm) {
+    document.documentElement.classList.add("js-reveal");
+    var vh = window.innerHeight || 800;
+    reveals.forEach(function (el) { if (el.getBoundingClientRect().top < vh) el.classList.add("in"); });
+    var ro = new IntersectionObserver(function (en) {
+      en.forEach(function (x) { if (x.isIntersecting) { x.target.classList.add("in"); countUp(x.target); ro.unobserve(x.target); } });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    reveals.forEach(function (el) { if (!el.classList.contains("in")) ro.observe(el); });
+  }
+  function countUp(root) {
+    $$("[data-count]", root).forEach(function (b) {
+      var n = +b.getAttribute("data-count"), t0 = 0;
+      function fmt(v) { return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0"); }
+      function step(t) { if (!t0) t0 = t; var p = Math.min(1, (t - t0) / 1100); b.textContent = fmt(Math.round(n * (1 - Math.pow(1 - p, 3)))); if (p < 1) requestAnimationFrame(step); }
+      requestAnimationFrame(step);
+    });
+  }
+
+  /* ---------- Отклик карточек: на ПК подсветка за курсором, на телефоне карточка в центре экрана приподнимается ---------- */
+  var CARDS = ".persona, .out, .tier, .story, .lead2";
+  var fine = window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  if (!calm && fine) {
+    document.addEventListener("pointermove", function (e) {
+      var c = e.target.closest && e.target.closest(CARDS);
+      if (!c) return;
+      var r = c.getBoundingClientRect();
+      c.style.setProperty("--mx", (e.clientX - r.left) + "px"); c.style.setProperty("--my", (e.clientY - r.top) + "px");
+    }, { passive: true });
+  } else if (!calm && "IntersectionObserver" in window) {
+    var fo = new IntersectionObserver(function (en) { en.forEach(function (x) { x.target.classList.toggle("focus", x.isIntersecting); }); }, { rootMargin: "-42% 0px -42% 0px" });
+    $$(CARDS).forEach(function (c) { fo.observe(c); });
+  }
+  /* маркер: ключевая фраза подчёркивается, когда до неё дочитали */
+  var hls = $$("mark.hl");
+  if (calm || !("IntersectionObserver" in window)) hls.forEach(function (m) { m.classList.add("on"); });
+  else {
+    var ho = new IntersectionObserver(function (en) { en.forEach(function (x) { if (x.isIntersecting) { x.target.classList.add("on"); ho.unobserve(x.target); } }); }, { rootMargin: "0px 0px -15% 0px" });
+    hls.forEach(function (m) { ho.observe(m); });
+  }
+
+  /* ---------- Плашка cookie: есть на странице, только когда подключена Метрика ---------- */
+  var ck = $(".cookie");
+  if (ck) {
+    var ok = false; try { ok = localStorage.getItem("iidd_cookie_ok") === "1"; } catch (e) {}
+    if (!ok) ck.hidden = false;
+    ck.addEventListener("click", function (e) {
+      if (e.target.closest(".js-cookie-ok")) { ck.hidden = true; try { localStorage.setItem("iidd_cookie_ok", "1"); } catch (e2) {} }
+    });
   }
 
   /* ---------- Фильтры каталога и библиотеки ---------- */

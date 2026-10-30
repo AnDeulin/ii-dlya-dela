@@ -543,12 +543,7 @@
     "Нейросеть в чате: ChatGPT, Claude, Алиса AI, GigaChat"
    ],
    "ru_tools": "выгрузка отзывов, YandexGPT или GigaChat, таблица",
-   "examples": [
-    {
-     "label": "выгрузка и разбор отзывов Яндекс Карт и 2ГИС (проект Андрея)",
-     "url": "https://github.com/AnDeulin/reviews"
-    }
-   ],
+   "examples": [],
    "course": true,
    "spheres": [
     "food",
